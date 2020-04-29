@@ -1,0 +1,179 @@
+HTML Code:
+
+<!doctype html>
+<html>
+<head>
+    <title>Weather Monitering System</title>
+    <link rel="stylesheet" href='../static/style.css'/>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <style>
+	body {
+	    text-align: center;
+	}
+	#g1,
+	#g2 {
+	    width: 200px;
+	    height: 160px;
+	    display: inline-block;
+	    margin: 1em;
+	}
+   </style>
+</head>
+<body>
+    <h1>Weather Monitering System </h1>
+    <div id="g1"></div>
+    <div id="g2"></div>
+    <hr>
+	<h3> Recent Sensor Reading: {{ time }} ==> <a href="/"class="button">Refresh</a></h3>	
+	<hr>
+	<p> @2019 Developed by SA</p>
+    <script src="../static/raphael-2.1.4.min.js"></script>
+    <script src="../static/justgage.js"></script>
+    <script>
+	var g1, g2;
+//The temperature gauge	
+document.addEventListener("DOMContentLoaded", function(event) {
+	    g1 = new JustGage({
+		id: "g1",
+		value: {{temp}},
+		valueFontColor: "black",
+		min: -10,
+		max: 50,
+		title: "Temperature",
+		label: "Celcius"
+	});
+//The humidity gauge	
+	    g2 = new JustGage({
+		id: "g2",
+		value: {{hum}},
+		valueFontColor: "black",
+		min: 0,
+		max: 100,
+		title: "Humidity",
+		label: "%"
+	});
+      });
+    </script>
+</body>
+</html>
+
+CSS File: 
+// determining the style of the body
+body{
+	background: white;
+	color: black;
+	padding:1%
+}
+// determining the style for the refresh button
+.button {
+	font: bold 15px ComicSans;
+	text-decoration: none;
+	background-color: #EEEEEE;
+	color: #333333;
+	padding: 2px 6px 2px 6px;
+	border-top: 1px solid #CCCCCC;
+	border-right: 1px solid #333333;
+	border-bottom: 1px solid #333333;
+	border-left: 1px solid #CCCCCC;}
+Python Code:
+
+from flask import Flask, render_template, request
+app = Flask(__name__)
+# Importing the libraries
+import time
+# Importing the Sqlite3 library
+import sqlite3
+# Importing the DHT22 sensor library
+import Adafruit_DHT
+# Importing the email alert library
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+# Getting the source email address
+source="one.1993.player@gmail.com"
+# Getting the destination email address
+destination="sraja5@hawk.iit.edu"
+# Defining the class for message alert
+def moniter():
+	msg = MIMEMultipart()
+	# Defining the source email
+	msg['From'] = source
+	# Defining the destination email
+	msg['To'] = destination
+# Defining the subject
+	msg['Subject'] = "ECE442 - Weather Alert"
+# Defining the body of the subject
+	body = 'Abnormal Temperature! Please, maintain your temperature'
+# Defining the style of the body
+	msg.attach(MIMEText(body, 'plain'))
+# defining the server mail id and port
+	server = smtplib.SMTP('smtp.gmail.com', 587)
+	server.ehlo
+	server.starttls()
+	server.login(source, "ece442project")
+	text = msg.as_string()
+# sending the email
+	server.sendmail(source, destination, text)
+# Closing the connection to the email server
+	server.quit()
+
+# Defining the name of the database
+dbname='sensorsData.db'
+# Getting the source email address
+def getsensordata():	
+	DHT22Sensor = Adafruit_DHT.DHT22
+# Defining the sensor data pin
+	sensorpin = 16
+# getting the data from the sensor
+	hum, temp = Adafruit_DHT.read_retry(DHT22Sensor, sensorpin)
+	# check if there is no value from the sensor
+	if hum is not None and temp is not None:
+		hum = round(hum)
+		temp = round(temp, 1)
+		logData (temp, hum)
+# saving sensor data on to the database
+def logData (temp, hum):
+	# initialize the connection to the database	
+	conn=sqlite3.connect(dbname)
+# open the connection to the database
+	curs=conn.cursor()
+	# Execute the command for insertion of data to the database
+	curs.execute("INSERT INTO DHTSensordata values(datetime('now','localtime'), (?), (?))", (temp, hum))
+	conn.commit()
+	conn.close()
+# fetching the data from database
+def getData():
+	# initialize the connection to the database
+	conn=sqlite3.connect('/home/pi/WMSPro/server/sensorsData.db')
+	# open the connection to the database
+	curs=conn.cursor()
+	# Execute the command for retrieval of data from the database
+	for row in curs.execute("SELECT * FROM DHTSensordata ORDER BY temp desc LIMIT 1"):
+		time = str(row[0])
+		temp = row[1]
+	# Check if the temperature if more than 30 then send a mail alert
+		if temp > 30:
+			moniter()	
+		hum = row[2]
+	conn.close()
+	#send the time, temperature, humidity data to the caller
+	return time, temp, hum
+
+# main route of the website and rendering
+@app.route("/")
+def index():
+	# Update the database to the latest value
+	getsensordata()	
+	# retrieve data from the database
+	time, temp, hum = getData()
+	templateData = {
+		'time': time,
+		'temp': temp,
+		'hum': hum
+	}
+	# return the data to the caller
+	return render_template('index.html', **templateData)
+if __name__ == "__main__":
+#hostin the website through port 80
+   app.run(debug=True, host='0.0.0.0', port=80)
+from flask import Flask
